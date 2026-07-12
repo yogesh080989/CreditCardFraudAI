@@ -11,7 +11,7 @@ metadata_directory: models/metadata/
 
 report_directory: reports/
 
-log_directory: notebooks/logs/
+log_directory: logs/
 
 paths:
   raw_data: data/raw
