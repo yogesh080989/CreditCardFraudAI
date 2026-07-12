@@ -10,3 +10,4 @@ venv/
 .DS_Store
 .env*
 *.log
+data/raw/creditcard.csv
