@@ -1,0 +1,9 @@
+{
+    "model_name": "XGBClassifier",
+    "training_time_seconds": 10.816,
+    "training_timestamp": "2026-07-12T03:09:45.571561",
+    "training_samples": 453204,
+    "feature_count": 30,
+    "saved_timestamp": "2026-07-12T11:43:47.921530",
+    "model_file": "models\\XGBClassifier.pkl"
+}

@@ -1,0 +1,9 @@
+{
+    "model_name": "DecisionTreeClassifier",
+    "training_time_seconds": 58.055,
+    "training_timestamp": "2026-07-12T12:22:38.772517",
+    "training_samples": 453204,
+    "feature_count": 30,
+    "saved_timestamp": "2026-07-12T12:27:57.081365",
+    "model_path": "D:\\technology\\Diploma\\upgrad\\May-2025-Batch\\capstone-project\\CreditCardFraudAI\\models\\DecisionTreeClassifier.pkl"
+}

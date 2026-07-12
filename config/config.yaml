@@ -1,0 +1,20 @@
+project:
+  name: CreditCardFraudAI
+  version: 0.1.0
+
+dataset_path: data/raw/creditcard.csv
+processed_data_path: data/processed/
+
+model_directory: models/
+
+metadata_directory: models/metadata/
+
+report_directory: reports/
+
+log_directory: notebooks/logs/
+
+paths:
+  raw_data: data/raw
+  interim_data: data/interim
+  processed_data: data/processed
+  external_data: data/external

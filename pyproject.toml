@@ -1,0 +1,17 @@
+[project]
+name = "CreditCardFraudAI"
+version = "0.1.0"
+description = "Credit card fraud detection AI project"
+authors = [ { name = "Your Name" } ]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "scikit-learn",
+    "streamlit",
+    "pyyaml"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
