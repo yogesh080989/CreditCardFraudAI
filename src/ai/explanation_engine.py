@@ -1,347 +1,609 @@
 """
-Module: explanation_engine.py
+===============================================================================
+CreditCardFraudAI
 
-Description:
-------------
-Enterprise-grade AI Explanation Engine for Credit Card Fraud Detection.
+Module : explanation_engine.py
 
-This module converts model predictions and SHAP explanations into a
-structured explanation object that can later be consumed by:
+Enterprise AI Explanation Engine
 
-- Project Owner Avatar
-- LangChain
-- Enterprise Reports
-- REST APIs
-- Streamlit UI
-- Evaluation Framework
+Responsibilities
+----------------
+* Consume SHAP explainability report
+* Generate business explanation
+* Generate technical explanation
+* Generate executive summary
+* Generate recommendation
+* Produce AIExplanation object
 
-Author: CreditCardFraudAI
+Author : Yogesh Ahuja
+Project : CreditCardFraudAI
+===============================================================================
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Dict
+from typing import List
 
-import numpy as np
+import pandas as pd
 
-from src.utils.logger_manager import LoggerManager
-from src.utils.config_manager import ConfigManager
-from src.utils.custom_exception import CreditCardFraudException
+from src.ai.explanation_models import (
+    AIExplanation,
+    BusinessSummary,
+    ComplianceSummary,
+    ExecutiveSummary,
+    ExplanationMetadata,
+    FeatureContribution,
+    TechnicalSummary,
+)
+
+from src.core.base import BaseComponent
+from src.core.logger import LoggerManager
+from src.core.exceptions import ExplainabilityError
 
 
-# -------------------------------------------------------------------------
-# Dataclasses
-# -------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class FeatureContribution:
+class ExplanationEngine(BaseComponent):
     """
-    Represents the contribution of a single feature.
+    Converts SHAP explainability into business-friendly AI explanations.
 
-    Attributes
-    ----------
-    rank : int
-        Ranking based on SHAP importance.
+    This class does NOT compute SHAP values.
 
-    feature : str
-        Feature name.
+    It consumes:
 
-    feature_value : Any
-        Actual transaction value.
+        SHAPExplainer.generate_explainability_report()
 
-    shap_value : float
-        Raw SHAP value.
+    and produces
 
-    absolute_importance : float
-        Absolute SHAP magnitude.
-
-    impact : str
-        Positive / Negative / Neutral
+        AIExplanation
     """
 
-    rank: int
-    feature: str
-    feature_value: Any
-    shap_value: float
-    absolute_importance: float
-    impact: str
-
-    def to_dict(self) -> Dict:
-        return asdict(self)
-
-
-@dataclass(slots=True)
-class ExplanationResult:
-    """
-    Final explanation object returned by ExplanationEngine.
-    """
-
-    prediction: str
-    confidence: float
-    risk_level: str
-    model_name: str
-
-    business_summary: str
-    technical_summary: str
-    recommendation: str
-
-    top_contributors: List[FeatureContribution] = field(default_factory=list)
-
-    explanation_timestamp: str = ""
-    metadata: Dict = field(default_factory=dict)
-
-    def to_dict(self) -> Dict:
-        result = asdict(self)
-        result["top_contributors"] = [
-            item.to_dict()
-            for item in self.top_contributors
-        ]
-        return result
-
-
-# -------------------------------------------------------------------------
-# Explanation Engine
-# -------------------------------------------------------------------------
-
-
-class ExplanationEngine:
-    """
-    Enterprise AI Explanation Engine.
-
-    Responsibilities
-    ----------------
-
-    1. Validate model outputs
-    2. Process SHAP values
-    3. Extract important features
-    4. Determine risk level
-    5. Build structured explanation
-    """
-
-    DEFAULT_TOP_FEATURES = 5
-
-    DEFAULT_THRESHOLDS = {
-        "LOW": 0.40,
-        "MEDIUM": 0.70,
-        "HIGH": 0.90,
-    }
+    ###########################################################################
+    # Constructor
+    ###########################################################################
 
     def __init__(
         self,
-        config: Optional[ConfigManager] = None,
-        logger: Optional[Any] = None,
-    ) -> None:
-        """
-        Initialize Explanation Engine.
-        """
+        logger=None,
+    ):
 
-        self.config = config or ConfigManager()
-
-        self.logger = logger or LoggerManager(
-            name=self.__class__.__name__
-        ).get_logger()
+        self.logger = logger or LoggerManager.get_logger(
+            self.__class__.__name__
+        )
 
         self.logger.info(
             "Initializing ExplanationEngine..."
         )
 
-        self.top_features = self.DEFAULT_TOP_FEATURES
-
-        self.thresholds = self.DEFAULT_THRESHOLDS.copy()
-
-        self.logger.info(
-            "ExplanationEngine initialized successfully."
-        )
-
-    # ------------------------------------------------------------------
+    ###########################################################################
     # Validation
-    # ------------------------------------------------------------------
+    ###########################################################################
 
-    def _validate_inputs(
+    def _validate_report(
         self,
-        prediction: int,
-        probability: float,
-        shap_values: np.ndarray,
-        feature_names: List[str],
-        feature_values: List[Any],
+        report: Dict,
     ) -> None:
-        """
-        Validate all inputs.
-        """
 
-        if prediction not in (0, 1):
-            raise CreditCardFraudException(
-                "Prediction must be either 0 or 1."
-            )
+        required = [
 
-        if not 0.0 <= probability <= 1.0:
-            raise CreditCardFraudException(
-                "Probability must lie between 0 and 1."
-            )
+            "prediction",
 
-        if len(feature_names) != len(feature_values):
-            raise CreditCardFraudException(
-                "Feature names and values length mismatch."
-            )
+            "probability",
 
-        if len(shap_values) != len(feature_names):
-            raise CreditCardFraudException(
-                "SHAP values length mismatch."
-            )
+            "risk_level",
 
-        self.logger.debug(
-            "Input validation successful."
-        )
+            "top_features",
 
-    # ------------------------------------------------------------------
-    # Risk Level
-    # ------------------------------------------------------------------
+        ]
 
-    def determine_risk_level(
+        for key in required:
+
+            if key not in report:
+
+                raise ExplainabilityError(
+                    f"Missing field '{key}' "
+                    "inside explainability report."
+                )
+
+    ###########################################################################
+    # Confidence
+    ###########################################################################
+
+    @staticmethod
+    def _confidence(
+        probability: float,
+    ) -> float:
+
+        return round(probability * 100, 2)
+
+    ###########################################################################
+    # Confidence Statement
+    ###########################################################################
+
+    def _confidence_statement(
         self,
         probability: float,
     ) -> str:
-        """
-        Determine risk category.
-        """
 
-        if probability < self.thresholds["LOW"]:
-            return "LOW"
+        if probability >= 0.95:
 
-        if probability < self.thresholds["MEDIUM"]:
-            return "MEDIUM"
+            return (
+                "The model has VERY HIGH confidence "
+                "in this prediction."
+            )
 
-        if probability < self.thresholds["HIGH"]:
-            return "HIGH"
+        if probability >= 0.80:
 
-        return "CRITICAL"
+            return (
+                "The model has HIGH confidence "
+                "in this prediction."
+            )
 
-    # ------------------------------------------------------------------
-    # Prediction Label
-    # ------------------------------------------------------------------
+        if probability >= 0.60:
 
-    @staticmethod
-    def prediction_label(prediction: int) -> str:
-        """
-        Convert numeric prediction into text.
-        """
+            return (
+                "The model has MODERATE confidence "
+                "in this prediction."
+            )
 
-        return "Fraud" if prediction == 1 else "Legitimate"
-
-    # ------------------------------------------------------------------
-    # SHAP Processing
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _impact(shap_value: float) -> str:
-        """
-        Determine feature impact direction.
-        """
-
-        if shap_value > 0:
-            return "Positive"
-
-        if shap_value < 0:
-            return "Negative"
-
-        return "Neutral"
-
-    # ------------------------------------------------------------------
-    # Feature Extraction
-    # ------------------------------------------------------------------
-
-    def extract_top_features(
-        self,
-        shap_values: np.ndarray,
-        feature_names: List[str],
-        feature_values: List[Any],
-        top_n: Optional[int] = None,
-    ) -> List[FeatureContribution]:
-        """
-        Extract top SHAP contributors.
-        """
-
-        self.logger.info(
-            "Extracting top SHAP contributors..."
+        return (
+            "The model confidence is LOW. "
+            "Manual review is recommended."
         )
 
-        if top_n is None:
-            top_n = self.top_features
+    ###########################################################################
+    # Recommendation
+    ###########################################################################
 
-        absolute_values = np.abs(shap_values)
+    def _recommendation(
+        self,
+        risk_level: str,
+    ) -> str:
 
-        sorted_indices = np.argsort(
-            absolute_values
-        )[::-1]
+        mapping = {
 
-        contributors: List[
-            FeatureContribution
-        ] = []
+            "LOW": "Approve transaction.",
 
-        for rank, idx in enumerate(
-            sorted_indices[:top_n],
+            "MEDIUM": (
+                "Manual review recommended."
+            ),
+
+            "HIGH": (
+                "Temporarily hold the transaction "
+                "for investigation."
+            ),
+
+            "VERY HIGH": (
+                "Block transaction immediately."
+            ),
+
+            "CRITICAL": (
+                "Block transaction immediately "
+                "and notify fraud operations."
+            ),
+        }
+
+        return mapping.get(
+            risk_level.upper(),
+            "Manual review required.",
+        )
+
+    ###########################################################################
+    # Feature Extraction
+    ###########################################################################
+
+    def _feature_contributions(
+        self,
+        top_features: pd.DataFrame,
+    ) -> List[FeatureContribution]:
+
+        contributors = []
+
+        if top_features is None:
+
+            return contributors
+
+        for rank, (_, row) in enumerate(
+            top_features.iterrows(),
             start=1,
         ):
 
-            contribution = FeatureContribution(
-                rank=rank,
-                feature=feature_names[idx],
-                feature_value=feature_values[idx],
-                shap_value=float(shap_values[idx]),
-                absolute_importance=float(
-                    absolute_values[idx]
-                ),
-                impact=self._impact(
-                    float(shap_values[idx])
+            contribution = row.get(
+                "SHAP",
+                row.get(
+                    "Contribution",
+                    0.0,
                 ),
             )
 
-            contributors.append(contribution)
+            contributors.append(
 
-        self.logger.info(
-            "Top %s contributors extracted.",
-            len(contributors),
-        )
+                FeatureContribution(
+
+                    feature=row["Feature"],
+
+                    value=row.get(
+                        "Value",
+                        None,
+                    ),
+
+                    contribution=float(
+                        contribution
+                    ),
+
+                    absolute_contribution=abs(
+                        float(contribution)
+                    ),
+
+                    rank=rank,
+
+                    impact=(
+                        "Positive"
+                        if contribution >= 0
+                        else "Negative"
+                    ),
+                )
+
+            )
 
         return contributors
 
-    # ------------------------------------------------------------------
-    # Metadata
-    # ------------------------------------------------------------------
+    ###########################################################################
+    # Business Summary
+    ###########################################################################
 
-    @staticmethod
-    def _metadata(
+    def _business_summary(
+        self,
+        prediction: int,
         probability: float,
-        contributors: List[FeatureContribution],
+        risk_level: str,
+        features: List[FeatureContribution],
+    ) -> BusinessSummary:
+
+        prediction_text = (
+            "Fraud"
+            if prediction == 1
+            else "Legitimate"
+        )
+
+        feature_text = ", ".join(
+
+            f.feature
+
+            for f in features[:3]
+
+        )
+
+        summary = (
+
+            f"The transaction has been classified as "
+
+            f"{prediction_text} with "
+
+            f"{self._confidence(probability):.2f}% "
+
+            f"confidence. "
+
+            f"The primary contributing features are "
+
+            f"{feature_text}. "
+
+            f"Overall risk level is "
+
+            f"{risk_level}."
+
+        )
+
+        return BusinessSummary(
+
+            title="Fraud Risk Assessment",
+
+            summary=summary,
+
+            recommendation=self._recommendation(
+                risk_level
+            ),
+
+            action_required=(
+                risk_level.upper()
+                in [
+                    "HIGH",
+                    "VERY HIGH",
+                    "CRITICAL",
+                ]
+            ),
+        )
+
+    ###########################################################################
+    # Technical Summary
+    ###########################################################################
+
+    def _technical_summary(
+        self,
+        model_name: str,
+        prediction: int,
+        probability: float,
+        risk_level: str,
+        features: List[FeatureContribution],
+    ) -> TechnicalSummary:
+
+        prediction_text = (
+            "Fraud"
+            if prediction == 1
+            else "Legitimate"
+        )
+
+        explanation = (
+
+            f"The {model_name} model predicted "
+
+            f"{prediction_text} with probability "
+
+            f"{probability:.4f}. "
+
+            f"SHAP analysis identified "
+
+            f"{', '.join(f.feature for f in features[:5])} "
+
+            f"as the dominant contributing features."
+
+        )
+
+        return TechnicalSummary(
+
+            model_name=model_name,
+
+            prediction=prediction,
+
+            probability=probability,
+
+            risk_level=risk_level,
+
+            explanation=explanation,
+
+            top_features=features,
+        )
+        ###########################################################################
+    # Executive Summary
+    ###########################################################################
+
+    def _executive_summary(
+        self,
+        probability: float,
+        risk_level: str,
+    ) -> ExecutiveSummary:
+        """
+        Generate executive summary.
+        """
+
+        confidence = self._confidence(probability)
+
+        headline = (
+            "High Risk Fraud Detected"
+            if risk_level.upper() in ["HIGH", "VERY HIGH", "CRITICAL"]
+            else "Transaction Appears Safe"
+        )
+
+        one_line = (
+            f"Fraud probability is {confidence:.2f}% "
+            f"with {risk_level.upper()} risk."
+        )
+
+        return ExecutiveSummary(
+            headline=headline,
+            risk_level=risk_level,
+            confidence=confidence,
+            recommendation=self._recommendation(risk_level),
+            one_line_summary=one_line,
+        )
+
+    ###########################################################################
+    # Compliance Summary
+    ###########################################################################
+
+    def _compliance_summary(self) -> ComplianceSummary:
+        """
+        Build compliance summary.
+        """
+
+        return ComplianceSummary(
+            framework="SHAP",
+            explainability_enabled=True,
+            audit_ready=True,
+            reproducible=True,
+            notes=(
+                "Prediction supported using SHAP feature attribution."
+            ),
+        )
+
+    ###########################################################################
+    # Metadata
+    ###########################################################################
+
+    def _metadata(
+        self,
+        model_name: str,
+    ) -> ExplanationMetadata:
+        """
+        Build explanation metadata.
+        """
+
+        return ExplanationMetadata(
+            model_name=model_name,
+            explainer_name="SHAPExplainer",
+        )
+
+    ###########################################################################
+    # Public API
+    ###########################################################################
+
+    def generate(
+        self,
+        explainability_report: Dict,
+        model_name: str,
+    ) -> AIExplanation:
+        """
+        Convert SHAP report into enterprise AI explanation.
+
+        Parameters
+        ----------
+        explainability_report : Dict
+            Output from SHAPExplainer.generate_explainability_report()
+
+        model_name : str
+            Trained model name.
+
+        Returns
+        -------
+        AIExplanation
+        """
+
+        self.logger.info(
+            "Generating AI explanation..."
+        )
+
+        try:
+
+            self._validate_report(
+                explainability_report
+            )
+
+            prediction = explainability_report["prediction"]
+
+            probability = float(
+                explainability_report["probability"]
+            )
+
+            risk_level = explainability_report["risk_level"]
+
+            top_features = explainability_report[
+                "top_features"
+            ]
+
+            if top_features is None:
+                top_features = pd.DataFrame()
+
+            contributors = self._feature_contributions(
+                top_features
+            )
+
+            business_summary = self._business_summary(
+                prediction,
+                probability,
+                risk_level,
+                contributors,
+            )
+
+            technical_summary = self._technical_summary(
+                model_name,
+                prediction,
+                probability,
+                risk_level,
+                contributors,
+            )
+
+            executive_summary = self._executive_summary(
+                probability,
+                risk_level,
+            )
+
+            compliance_summary = (
+                self._compliance_summary()
+            )
+
+            metadata = self._metadata(
+                model_name
+            )
+
+            explanation = AIExplanation(
+
+                prediction=prediction,
+
+                probability=probability,
+
+                confidence=self._confidence(
+                    probability
+                ),
+
+                risk_level=risk_level,
+
+                confidence_statement=(
+                    self._confidence_statement(
+                        probability
+                    )
+                ),
+
+                feature_contributions=contributors,
+
+                business_summary=business_summary,
+
+                technical_summary=technical_summary,
+
+                executive_summary=executive_summary,
+
+                compliance_summary=compliance_summary,
+
+                metadata=metadata,
+
+                raw_report=explainability_report,
+            )
+
+            self.logger.info(
+                "AI explanation generated successfully."
+            )
+
+            return explanation
+
+        except Exception as ex:
+
+            self.logger.exception(ex)
+
+            raise ExplainabilityError(
+                f"Unable to generate AI explanation : {ex}"
+            )
+
+    ###########################################################################
+    # BaseComponent Implementation
+    ###########################################################################
+
+    def execute(
+        self,
+        explainability_report: Dict,
+        model_name: str,
+    ) -> AIExplanation:
+        """
+        Default execution entry point.
+        """
+
+        return self.generate(
+            explainability_report=explainability_report,
+            model_name=model_name,
+        )
+
+    ###########################################################################
+    # Convenience Methods
+    ###########################################################################
+
+    def generate_dict(
+        self,
+        explainability_report: Dict,
+        model_name: str,
     ) -> Dict:
         """
-        Build metadata dictionary.
+        Generate explanation as dictionary.
         """
 
-        return {
-            "confidence_percentage": round(
-                probability * 100,
-                2,
-            ),
-            "top_feature_count": len(
-                contributors
-            ),
-            "generated_at": datetime.utcnow().isoformat(),
-        }
+        return self.generate(
+            explainability_report,
+            model_name,
+        ).to_dict()
 
-    # ------------------------------------------------------------------
-    # Timestamp
-    # ------------------------------------------------------------------
+    ###########################################################################
+    # String Representation
+    ###########################################################################
 
-    @staticmethod
-    def _timestamp() -> str:
-        """
-        Current UTC timestamp.
-        """
+    def __repr__(self) -> str:
 
-        return datetime.utcnow().strftime(
-            "%Y-%m-%d %H:%M:%S UTC"
+        return (
+            f"{self.__class__.__name__}("
+            "source='SHAPExplainer')"
         )
