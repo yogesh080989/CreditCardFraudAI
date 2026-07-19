@@ -114,3 +114,12 @@ class ExplainabilityError(CreditCardFraudAIError):
 
 class PipelineError(CreditCardFraudAIError):
     """Raised for end-to-end pipeline failures."""
+
+
+class CreditCardFraudException(CreditCardFraudAIError):
+    """
+    Generic project exception used across the framework.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(message)
